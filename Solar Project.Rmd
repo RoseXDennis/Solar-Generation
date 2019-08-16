@@ -1,0 +1,741 @@
+---
+title: "Solar Project"
+author: "Rose Dennis"
+date: "3/20/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, results='hide'}
+library(lubridate)
+library(ggplot2)
+library(tidyverse)
+library(car)
+library(dplyr)
+library(lattice)
+library(MASS)
+library("ISLR", lib.loc="/Library/Frameworks/R.framework/Versions/3.5/Resources/library")
+library("glmnet", lib.loc="/Library/Frameworks/R.framework/Versions/3.5/Resources/library")
+library("randomForest", lib.loc="/Library/Frameworks/R.framework/Versions/3.5/Resources/library")
+library("pROC", lib.loc="/Library/Frameworks/R.framework/Versions/3.5/Resources/library")
+library("pls", lib.loc="/Library/Frameworks/R.framework/Versions/3.5/Resources/library")
+library("corrplot", lib.loc="/Library/Frameworks/R.framework/Versions/3.5/Resources/library")
+```
+
+GOALS:
+-       Question: Solar power generation (gen) based other variables (just 
+consumption of power covariates)
+-       Check for linear relationship between variables
+-       Finding out which variables are significant to the model by performing 
+various regression techniques (pairs plot)
+-       Check assumptions
+
+
+```{r}
+setwd("/Users/rosedennis/Desktop/Applied Math Grad School/ProjectSeminar")
+```
+
+GETTING MULTIPLOT FUNCTION TO WORK
+```{r, results='hide'}
+multiplot <- function(..., plotlist = NULL, file, cols = 1, layout = NULL) {
+  require(grid)
+
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  if (is.null(layout)) {
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                 ncol = cols, nrow = ceiling(numPlots/cols))
+}
+
+if (numPlots == 1) {
+print(plots[[1]])
+
+} else {
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+for (i in 1:numPlots) {
+  matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+  print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                  layout.pos.col = matchidx$col))
+ }
+}
+ }
+```
+
+
+```{r}
+#multiplot(gen.hist, hum.hist, appTEMP.hist, cc.hist, dewPOINT.hist, temp.hist, cols=2)
+#multiplot(vis.hist, press.hist, windBearing.hist, precipProb.hist, windSpeed.hist, pricipIntensity.hist, cols=2)
+```
+
+for solar generation want regression for afternoon for each season (4 diff models)---afternoon hour 13-17
+
+NEW DATASETS (JUST PEAK HOURS)
+
+```{r}
+peak2014<- dplyr::select(homeC2014DAY,
+                  temp:gen,
+                  season
+)
+peak2014winter<-filter(peak2014,season=="winter")
+peak2014summer<-filter(peak2014,season=="summer")
+peak2014fall<-filter(peak2014,season=="fall")
+peak2014spring<-filter(peak2014,season=="spring")
+```
+
+WINTER
+
+Descriptives
+```{r}
+#Response Histogram
+gen.hist <- ggplot(data=peak2014winter, aes(x=gen)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Solar Generation") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+gen.hist
+#doesn't look great, tried log transformation
+log.gen.hist<- ggplot(data=peak2014winter, aes(x=log(gen))) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Log(Winter Solar Generation)") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#still not great but oh well
+#Predictor Histograms (just continuous variables)
+#HUMIDITY
+hum.hist <- ggplot(data=peak2014winter, aes(x=hum)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Humidity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#tried log transform, looks worse
+#AppTEMP
+appTEMP.hist <- ggplot(data=peak2014winter, aes(x=appTemp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter appTEMP") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#looks normal
+#CC
+cc.hist <- ggplot(data=peak2014winter, aes(x=cc)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter CC") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#logtransorm...idk if this looks better
+log.cc.hist<- ggplot(data=peak2014winter, aes(x=log(cc))) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Log(CC)") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#dewPOINT
+dewPOINT.hist <- ggplot(data=peak2014winter, aes(x=dewPoint)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Dew Point") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#TEMP
+temp.hist <- ggplot(data=peak2014winter, aes(x=temp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Temperature") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#VIS
+vis.hist <- ggplot(data=peak2014winter, aes(x=vis)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Visibility") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#looks bad but log transform doesn't help
+#PRESS
+press.hist <- ggplot(data=peak2014winter, aes(x=press)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Pressure") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windBEARING
+windBearing.hist <- ggplot(data=peak2014winter, aes(x=windBearing)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Wind Bearing") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#looks bimodal, not sure how to fix that
+#precipPROB
+precipProb.hist <- ggplot(data=peak2014winter, aes(x=precipProb)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Precipitation Probability") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windSPEED
+windSpeed.hist <- ggplot(data=peak2014winter, aes(x=windSpeed)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Wind Speed") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#skewed slightly right
+#pricipINTENSITY
+pricipIntensity.hist <- ggplot(data=peak2014winter, aes(x=pricipIntensity)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Pricipitation Intensity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#tried log transform, idk what looks better
+#USE
+use.hist <- ggplot(data=peak2014winter, aes(x=use)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Winter Use") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#skewed right
+multiplot(gen.hist, hum.hist, appTEMP.hist, cc.hist, dewPOINT.hist, temp.hist, vis.hist, press.hist, windBearing.hist, precipProb.hist, windSpeed.hist, pricipIntensity.hist, cols=2)
+```
+
+MODEL-NO TRANSFORMS
+
+```{r}
+peak2014winter_2<- dplyr::select(peak2014winter,temp:gen)
+peak2014winter_3<-na.omit(peak2014winter_2) #only uses complete sets of data. This decreased the nunber of observations by a lot but it was the only way I could make the code work. went from 810 obs to 586
+w1<-lm(gen~temp+icon+hum+vis+sum+appTemp+press+windSpeed+cc+windBearing+pricipIntensity+dewPoint+precipProb, data=peak2014winter_3)
+summary(w1) #R^2 is kind of low = .3169
+qqnorm(w1$residuals) #qq plot looks fine
+anova(w1)
+#says temp,icon,hum,vis,press, and windBearing are important... R^2=.3203
+
+#Using AIC to choose variables
+both1 = step(w1, direction = "both", trace=FALSE ) 
+summary(both1) #temp, iconclear-night, iconcloudy, press, windBearing, dewPoint, precipProb ...R^2=.3238
+backwards1 = step(w1, direction = "backward", trace=FALSE ) 
+summary(backwards1) #temp, iconclear-night, iconcloudy, press, windBearing, dewPoint, precipProb ...R^2=.3238
+forward1 = step(w1, direction = "forward", trace=FALSE ) 
+summary(forward1) #iconclear-night, press, windBearing, ...R^2=.3169
+#going to keep temp, press, cc, windBearing, dewPoint and use
+
+#backwards selection best
+
+w_final<-lm(gen~temp+icon+press+windBearing+dewPoint+precipProb, data=peak2014winter_3)
+summary(w_final) #R^2=.3238
+
+#performed a pairs plot to look at correlation. Had to take out icon because it's discrete. Also calculated Variance Inflation Factors for multicollinearity.
+cor_df<-dplyr::select(peak2014winter_3, temp, hum, vis, appTemp, press, windSpeed, cc, windBearing, pricipIntensity, dewPoint, precipProb, gen)
+M<-cor(cor_df)
+corrplot(M, method= "number")
+vif(w_final) #idt any of these have a really high VIF so we're okay
+qqnorm(w_final$residuals)
+#CHECKING ASSUMPTIONS
+#the residuals vs fitted plot looks really bad...they clearly have some kind of trend
+errors1<-ggplot(fortify(w_final), aes(x=.fitted, y=.resid))+geom_point() +
+      geom_smooth(se=FALSE)+geom_hline(yintercept=0, col="red", linetype="dashed") +
+      xlab("Fitted Values")+ylab("Residuals") +
+      ggtitle("Residual vs Fitted Plot")
+#check for non-constant variance
+variance1<-ggplot(data=w_final, aes(x=.resid)) + 
+      geom_histogram(binwidth=0.5, fill="blue") +
+      xlab("Residuals") +
+      ggtitle("Distribution of Residuals")
+```
+
+Test MSE
+
+```{r}
+set.seed(11)
+train<-sample(1:dim(peak2014winter_3)[1],dim(peak2014winter_3)[1]/2) #splitting data into half train.
+test<- -train
+Winter.train<- peak2014winter_3[train,] 
+Winter.test<- peak2014winter_3[test,] 
+
+#linear model
+w_a<-lm(gen~temp+icon+press+windBearing+dewPoint+precipProb, data=Winter.train)
+pred.fit<-predict(w_a, Winter.test)
+MSE_linear<-mean((pred.fit-Winter.test$gen)^2) #test MSE is 0.0162
+MSE_linear
+
+#ridge
+x<-model.matrix(gen~.-use,peak2014winter_3 )[,-1] #the normal design matrix has a column of ones so we get rid of that,
+y<-peak2014winter_3$gen 
+y.test<-y[test] 
+cv.out<-cv.glmnet (x[train ,],y[train],alpha =0) #alpha=0 is ridge 
+plot(cv.out)
+bestlam<-cv.out$lambda.min
+bestlam #this seems low...lambda=0.0295
+ridge.mod<-glmnet(x[train,],y[train],alpha =0, lambda =bestlam , 
+thresh =1e-12)
+ridge.pred=predict(ridge.mod ,s=bestlam, newx=x[test ,])
+MSE_ridge<-mean((ridge.pred -y.test)^2) #test MSE is 0.0153
+MSE_ridge
+
+#lasso
+cv.out2<-cv.glmnet (x[train ,],y[train],alpha =1) #alpha=1 for lasso #same error as above
+plot(cv.out2)
+bestlam2<-cv.out2$lambda.min
+bestlam2 #lambda=0.0045
+lasso.mod<-glmnet(x[train,],y[train],alpha =1, lambda =bestlam2 , 
+thresh =1e-12)
+lasso.pred=predict(lasso.mod ,s=bestlam2, newx=x[test ,])
+MSE_lasso<-mean((lasso.pred -y.test)^2) #test MSE=0.0150
+MSE_lasso
+out=glmnet(x,y,alpha =1, lambda =bestlam2)
+lasso.coef=predict(out ,type ="coefficients",s=bestlam )[1:18 ,]
+lasso.coef #does variable selection, says there are 5 non-zero coeffs- iconpartly-cloudy-night, hum, temp, vis, iconclear-night
+
+#PCR
+pcr.fit=pcr(gen~.-use, data=peak2014winter_3 ,subset =train ,scale =FALSE , #had to change scale to false or else it didn't work
+validation ="CV")
+validationplot(pcr.fit,val.type="MSEP")
+
+#Looking at the plot, it seems that the lowest cross validation error is around M=8. So we will use this in finding the test MSE.
+
+pcr.pred=predict (pcr.fit ,x[test ,], ncomp =8)
+MSE_pcr<-mean((pcr.pred -y.test)^2) #test MSE=0.0152
+MSE_pcr
+
+#PLS
+pls.fit=plsr(gen~.-use, data=peak2014winter_3 ,subset =train ,scale=FALSE ,
+validation ="CV")
+validationplot(pls.fit ,val.type="MSEP") #looks like the lowest point is around 8
+pls.pred=predict (pls.fit ,x[test ,], ncomp =8)
+MSE_pls<-mean((pls.pred -y.test)^2) #test MSE=0.0152
+MSE_pls
+
+#comparison
+test.avg<- mean(Winter.test$gen)
+lmodel2<-1-mean((pred.fit-Winter.test$gen)^2)/mean((test.avg-Winter.test$gen)^2)
+r2<-1-mean((ridge.pred-Winter.test$gen)^2)/mean((test.avg-Winter.test$gen)^2)
+l2<-1-mean((lasso.pred-Winter.test$gen)^2)/mean((test.avg-Winter.test$gen)^2)
+pcr2<-1-mean((pcr.pred-Winter.test$gen)^2)/mean((test.avg-Winter.test$gen)^2)
+pls2<-1-mean((pls.pred-Winter.test$gen)^2)/mean((test.avg-Winter.test$gen)^2)
+c(lmodel2,r2,l2,pcr2,pls2) #PLS performs the best
+
+#decision tree
+m_tree<-tree(gen~.-use, data=Winter.train)
+summary(m_tree) #used temp, windSpeed, press, hum, icon, appTemp, vis, windBearing, and dewPoint 
+m_tree #15 terminal nodes, deviance=sum of squared errors= 0.0086
+plot(m_tree)
+text(m_tree,pretty=0)
+
+cv.tree =cv.tree(m_tree)
+plot(cv.tree$size ,cv.tree$dev ,type='b') #I think this shows that the tree size that best minimizes the cv error is a tree of size 3
+
+prune.tree =prune.tree(m_tree ,best =3) #3 terminal nodes, uses temp and windSpeed deviance=0.01408
+plot(prune.tree )
+text(prune.tree,pretty =0) 
+
+yhat=predict (m_tree,newdata =Winter.test)
+plot(yhat ,Winter.test$gen)
+abline (0,1)
+MSE_tree<-mean((yhat -Winter.test$gen)^2) #test MSE= 0.0194
+MSE_tree
+sqrt(mean((yhat -Winter.test$gen)^2)) #solar predictions within around 0.1394 of true median generation value for the winter
+
+yhat.prune=predict (prune.tree,newdata =Winter.test)
+plot(yhat.prune ,Winter.test$gen)
+abline (0,1)
+MSE_prune<-mean((yhat.prune -Winter.test$gen)^2) #test MSE= 0.0174
+MSE_prune
+sqrt(mean((yhat.prune -Winter.test$gen)^2)) #solar predictions within around 0.1320 of true median generation value for the winter....this is better
+
+#random forest  
+rf =randomForest(gen~.-use,data=peak2014winter_3 ,subset =train ,
+mtry=5, importance =TRUE) #used mtry=5 because it's usually p/3 for regression
+yhat.rf = predict (rf,newdata =Winter.test)
+importance(rf)
+varImpPlot (rf)
+MSE_rf<-mean(( yhat.rf -Winter.test$gen)^2) #test MSE=0.0081, performs the best
+MSE_rf
+
+```
+
+SUMMER
+
+Descriptives
+```{r}
+gen.hist3 <- ggplot(data=peak2014summer, aes(x=gen)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Solar Generation") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#Predictor Histograms (just continuous variables)
+#HUMIDITY
+hum.hist3 <- ggplot(data=peak2014summer, aes(x=hum)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Humidity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#AppTEMP
+appTEMP.hist3 <- ggplot(data=peak2014summer, aes(x=appTemp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer appTEMP") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#CC
+cc.hist3 <- ggplot(data=peak2014summer, aes(x=cc)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer CC") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#dewPOINT
+dewPOINT.hist3 <- ggplot(data=peak2014summer, aes(x=dewPoint)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Dew Point") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#TEMP
+temp.hist3 <- ggplot(data=peak2014summer, aes(x=temp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Temperature") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#VIS
+vis.hist3 <- ggplot(data=peak2014summer, aes(x=vis)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer  Visibility") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#PRESS
+press.hist3 <- ggplot(data=peak2014summer, aes(x=press)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Pressure") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windBEARING
+windBearing.hist3 <- ggplot(data=peak2014summer, aes(x=windBearing)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Wind Bearing") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#precipPROB
+precipProb.hist3 <- ggplot(data=peak2014summer, aes(x=precipProb)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Precipitation Probability") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windSpeed
+windSpeed.hist3 <- ggplot(data=peak2014summer, aes(x=windSpeed)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Wind Speed") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#pricipINTENSITY
+pricipIntensity.hist3 <- ggplot(data=peak2014summer, aes(x=pricipIntensity)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Pricipitation Intensity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#USE
+use.hist3 <- ggplot(data=peak2014summer, aes(x=use)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Summer Use") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+multiplot(gen.hist3, hum.hist3, appTEMP.hist3, cc.hist3, dewPOINT.hist3, temp.hist3, vis.hist3, press.hist3, windBearing.hist3, precipProb.hist3, windSpeed.hist3, pricipIntensity.hist3, cols=2)
+```
+
+MODEL
+```{r}
+peak2014summer_2<- dplyr::select(peak2014summer,temp:gen)
+peak2014summer_3<-na.omit(peak2014summer_2)
+summer1<-lm(gen~temp+icon+hum+vis+sum+appTemp+press+windSpeed+cc+windBearing+pricipIntensity+dewPoint+precipProb, data=peak2014summer_3)
+summary(summer1) 
+qqnorm(summer1$residuals)
+anova(summer1) #keeps temp, icon, sum, appTemp, cc, windBearing, dewPoint, precipProb... R^2=.2866
+both3 = step(summer1, direction = "both", trace=FALSE ) 
+summary(both3) #iconclear-night,iconpartly-cloudy-night,hum,sumLight Rain, sumMostly Cloudy, appTemp, cc, windBearing, pricipIntensity dewPoint, precipProb ...R^2=.2959
+backwards3 = step(summer1, direction = "backward", trace=FALSE ) 
+summary(backwards3) #iconclear-night,iconpartly-cloudy-night,hum,sumLight Rain, sumMostly Cloudy, appTemp, cc, windBearing, pricipIntensity, dewPoint, precipProb ...R^2=.2959
+forward3 = step(summer1, direction = "forward", trace=FALSE ) 
+summary(forward3) #iconclear-night,iconpartly-cloudy-night,hum,sumLight Rain, sumMostly Cloudy, cc, windBearing, pricipIntensity dewPoint, precipProb ...R^2=.2953
+
+summer_final<-lm(gen~icon+hum+sum+appTemp+cc+ windBearing+pricipIntensity+ dewPoint+ precipProb, data=peak2014summer_3)
+cor_df3<-dplyr::select(peak2014summer_3, temp, hum, vis, appTemp, press, windSpeed, cc, windBearing, pricipIntensity, dewPoint, precipProb, gen)
+M3<-cor(cor_df3)
+corrplot(M3, method= "number")
+#vif(summer_final) #can't perform this b/c there seems to be perfectly correlated variables in the model. 
+#run an alias to find these variables
+alias( summer_final) #this shows that sumFoggy/iconfog, sumOvercast/iconcloudy, sumPartly Cloudy/iconpartly-cloudy-night, sumRain/iconrain, sumPartly Cloudy/sumMostly Cloudy, sumRain/sumDrizzle, sumRain/sumLight Rain are highly correlated. This makes sense just looking at the variable names.
+qqnorm(summer_final$residuals)
+
+#CHECKING ASSUMPTIONS
+#the residuals vs fitted plot looks really bad...they clearly have some kind of trend
+errors3<-ggplot(fortify(summer_final), aes(x=.fitted, y=.resid))+geom_point() +
+      geom_smooth(se=FALSE)+geom_hline(yintercept=0, col="red", linetype="dashed") +
+      xlab("Fitted Values")+ylab("Residuals") +
+      ggtitle("Residual vs Fitted Plot")
+#check for non-constant variance
+variance3<-ggplot(data=summer_final, aes(x=.resid)) + 
+      geom_histogram(binwidth=0.5, fill="blue") +
+      xlab("Residuals") +
+      ggtitle("Distribution of Residuals")
+```
+
+Test MSE
+
+```{r}
+set.seed(11)
+train3<-sample(1:dim(peak2014summer_3)[1],dim(peak2014summer_3)[1]/2) #splitting data into half train.
+test3<- -train3
+Summer.train<- peak2014summer_3[train3,] 
+Summer.test<- peak2014summer_3[test3,] 
+#linear model
+summer_a<-lm(gen~icon+hum+sum+appTemp+cc+ windBearing+pricipIntensity+ dewPoint+ precipProb, data=Summer.train) #needed to take icon out for this
+pred.fit3<-predict(summer_a, Summer.test)
+MSE_linear3<-mean((pred.fit3-Summer.test$gen)^2) #test MSE is 0.0199
+MSE_linear3
+#ridge
+x3<-model.matrix(gen~ .-use,peak2014summer_3 )[,-1] #the normal design matrix has a column of ones so we get rid of that,
+y3<-peak2014summer_3$gen 
+y.test3<-y3[test3] 
+cv.out3<-cv.glmnet (x3[train3 ,],y3[train3],alpha =0) #alpha=0 is ridge 
+plot(cv.out3)
+bestlam3<-cv.out3$lambda.min
+bestlam3 #this seems low...lambda=0.0050
+ridge.mod3<-glmnet(x3[train3,],y3[train3],alpha =0, lambda =bestlam3 , 
+thresh =1e-12)
+ridge.pred3=predict(ridge.mod3 ,s=bestlam3, newx=x3[test3 ,])
+MSE_ridge3<-mean((ridge.pred3 -y.test3)^2)#test MSE is 0.0186
+MSE_ridge3
+#lasso
+cv.out3<-cv.glmnet (x3[train3 ,],y3[train3],alpha =1) #alpha=1 for lasso #same error as above
+plot(cv.out3)
+bestlam3<-cv.out3$lambda.min
+bestlam3 #lambda=0.0025
+lasso.mod3<-glmnet(x3[train3,],y3[train3],alpha =1, lambda =bestlam3 , 
+thresh =1e-12)
+lasso.pred3=predict(lasso.mod3 ,s=bestlam3, newx=x3[test3 ,])
+MSE_lasso3<-mean((lasso.pred3 -y.test3)^2) #test MSE=0.0186
+MSE_lasso3
+out3=glmnet(x3,y3,alpha =1, lambda =bestlam3)
+lasso.coef3=predict(out3 ,type ="coefficients",s=bestlam3 )[1:18 ,]
+lasso.coef3 #iconpartly-cloudy-night, sumPartly Cloudy, sumMostly Cloudy, sumRain, iconclear-night, appTemp
+#PCR
+pcr.fit3=pcr(gen~.-use, data=peak2014summer_3 ,subset =train3 ,scale =FALSE , #had to change scale to false or else it didn't work
+validation ="CV")
+validationplot(pcr.fit3,val.type="MSEP")
+
+#Looking at the plot, it seems that the lowest cross validation error is around M=10. So we will use this in finding the test MSE.
+
+pcr.pred3=predict (pcr.fit3 ,x3[test3 ,], ncomp =10)
+MSE_pcr3<-mean((pcr.pred3 -y.test3)^2) #test MSE=0.0214
+MSE_pcr3
+#pls
+pls.fit3=plsr(gen~.-use, data=peak2014summer_3 ,subset =train3 ,scale=FALSE ,
+validation ="CV")
+validationplot(pls.fit3 ,val.type="MSEP") #looks like the lowest point is around 18 &...how do I get this more exact?
+pls.pred3=predict (pls.fit3 ,x3[test3 ,], ncomp =10)
+MSE_pls3<-mean((pls.pred3 -y.test3)^2) #test MSE= 0.0190
+MSE_pls3
+
+#decision tree
+m_tree3<-tree(gen~.-use, data=Summer.train)
+summary(m_tree3) #used windBearing, cc, press, dewPoint, pricipIntensity, and hum
+m_tree3 #16 terminal nodes, deviance=sum of squared errors= 0.01389
+plot(m_tree3)
+text(m_tree3,pretty=0)
+
+cv.tree3 =cv.tree(m_tree3)
+plot(cv.tree3$size ,cv.tree3$dev ,type='b') #I think this shows that the tree size that best minimizes the cv error is a tree of size 10
+
+prune.tree3 =prune.tree(m_tree3 ,best =10) #10 terminal nodes, uses windBearing, cc pricipIntensity, hum, deviance= 0.01568
+plot(prune.tree3 )
+text(prune.tree3,pretty =0) 
+
+yhat3=predict (m_tree3,newdata =Summer.test)
+plot(yhat3 ,Summer.test$gen)
+abline (0,1)
+MSE_tree3<-mean((yhat3 -Summer.test$gen)^2) #test MSE= 0.0236
+MSE_tree3
+sqrt(mean((yhat3 -Summer.test$gen)^2)) #solar predictions within around 0.1537 of true median generation value for the winter
+
+yhat.prune3=predict (prune.tree3,newdata =Summer.test)
+plot(yhat.prune3 ,Summer.test$gen)
+abline (0,1)
+MSE_prune3<-mean((yhat.prune3 -Summer.test$gen)^2) #test MSE= 0.0250
+MSE_prune3
+sqrt(mean((yhat.prune3 -Summer.test$gen)^2)) #solar predictions within around 0.1583 of true median generation value for the winter....this is better
+
+#random forest  
+
+rf3 =randomForest(gen~.-use,data=peak2014summer_3 ,subset =train3 ,
+mtry=5, importance =TRUE)
+yhat.rf3 = predict (rf3,newdata =Summer.test)
+importance(rf3)
+varImpPlot (rf3)
+MSE_rf3<-mean(( yhat.rf3 -Summer.test$gen)^2) #test MSE=0.0144, performs the best
+MSE_rf3
+
+```
+
+FALL
+
+Descriptives
+
+```{r}
+#Response Histogram
+gen.hist2 <- ggplot(data=peak2014fall, aes(x=gen)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Solar Generation") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+gen.hist2
+#Predictor Histograms (just continuous variables)
+#HUMIDITY
+hum.hist2 <- ggplot(data=peak2014fall, aes(x=hum)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Humidity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#AppTEMP
+appTEMP.hist2 <- ggplot(data=peak2014fall, aes(x=appTemp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall appTEMP") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#CC
+cc.hist2 <- ggplot(data=peak2014fall, aes(x=cc)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall CC") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#dewPOINT
+dewPOINT.hist2 <- ggplot(data=peak2014fall, aes(x=dewPoint)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Dew Point") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#TEMP
+temp.hist2 <- ggplot(data=peak2014fall, aes(x=temp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Temperature") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#VIS
+vis.hist2 <- ggplot(data=peak2014fall, aes(x=vis)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Visibility") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#PRESS
+press.hist2 <- ggplot(data=peak2014fall, aes(x=press)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Pressure") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windBEARING
+windBearing.hist2 <- ggplot(data=peak2014fall, aes(x=windBearing)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Wind Bearing") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#precipPROB
+precipProb.hist2 <- ggplot(data=peak2014fall, aes(x=precipProb)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Precipitation Probability") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windSPEED
+windSpeed.hist2 <- ggplot(data=peak2014fall, aes(x=windSpeed)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Wind Speed") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#pricipINTENSITY
+pricipIntensity.hist2 <- ggplot(data=peak2014fall, aes(x=pricipIntensity)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Pricipitation Intensity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#USE
+use.hist2 <- ggplot(data=peak2014fall, aes(x=use)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Fall Use") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+multiplot(gen.hist2, hum.hist2, appTEMP.hist2, cc.hist2, dewPOINT.hist2, temp.hist2, vis.hist2, press.hist2, windBearing.hist2, precipProb.hist2, windSpeed.hist2, pricipIntensity.hist2, cols=2)
+```
+
+MODEL- NO TRANSFORMS
+
+```{r}
+f1<-lm(gen~temp+icon+hum+vis+sum+appTemp+press+windSpeed+cc+windBearing+pricipIntensity+dewPoint+precipProb+use, data=peak2014fall)
+summary(f1) 
+qqnorm(f1$residuals)
+anova(f1) #keep temp, icon, hum, vis, appTemp, cc, windBearing,dewPoint,precipProb, use ...R^2=.2929
+both2 = step(f1, direction = "both", trace=FALSE ) 
+summary(both2) #temp, iconclear-night,iconfog,iconpartly-cloudy-day,iconpartly-cloudy-night,hum,appTemp, cc, windBearing, dewPoint, precipProb, use ...R^2=.2932
+backwards2 = step(f1, direction = "backward", trace=FALSE ) 
+summary(backwards2) #temp, iconclear-night,iconfog,iconpartly-cloudy-day,iconpartly-cloudy-night,hum,appTemp, cc, windBearing, dewPoint, precipProb, use ...R^2=.2932
+forward2 = step(f1, direction = "forward", trace=FALSE ) 
+summary(forward2) #temp, iconclear-night,iconpartly-cloudy-day,iconpartly-cloudy-night,iconwind, sumBreezy and Mostly Cloudy, sumBreezy and Partly Cloudy,cc, windBearing, dewPoint, precipProb, use ... R^2=.2968
+
+#FORWARD SELECTION WORKS BEST BUT IT HAS MANY VARIABLES KEPT IN THE MODEL. we include icon and sum
+f_final<-lm(gen~temp+sum+cc+ windBearing+ dewPoint+ precipProb+ use, data=peak2014fall)
+pairs(gen~temp+cc+windBearing+dewPoint+ precipProb+use, data=peak2014fall) #had to take out sum bc it's discrete
+vif(f_final) #seems like sum and precipProb have high VIF
+qqnorm(f_final$residuals)
+
+#CHECKING ASSUMPTIONS
+#the residuals vs fitted plot looks really bad...they clearly have some kind of trend
+errors2<-ggplot(fortify(f_final), aes(x=.fitted, y=.resid))+geom_point() +
+      geom_smooth(se=FALSE)+geom_hline(yintercept=0, col="red", linetype="dashed") +
+      xlab("Fitted Values")+ylab("Residuals") +
+      ggtitle("Residual vs Fitted Plot")
+#check for non-constant variance
+variance2<-ggplot(data=f_final, aes(x=.resid)) + 
+      geom_histogram(binwidth=0.5, fill="blue") +
+      xlab("Residuals") +
+      ggtitle("Distribution of Residuals")
+```
+
+
+SPRING
+
+Descriptives
+```{r}
+gen.hist4 <- ggplot(data=peak2014spring, aes(x=gen)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Solar Generation") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#Predictor Histograms (just continuous variables)
+#HUMIDITY
+hum.hist4 <- ggplot(data=peak2014spring, aes(x=hum)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Humidity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#AppTEMP
+appTEMP.hist4 <- ggplot(data=peak2014spring, aes(x=appTemp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring appTEMP") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#CC
+cc.hist4 <- ggplot(data=peak2014spring, aes(x=cc)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring CC") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#dewPOINT
+dewPOINT.hist4 <- ggplot(data=peak2014spring, aes(x=dewPoint)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Dew Point") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#TEMP
+temp.hist4 <- ggplot(data=peak2014spring, aes(x=temp)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Temperature") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#VIS
+vis.hist4 <- ggplot(data=peak2014spring, aes(x=vis)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Visibility") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#PRESS
+press.hist4 <- ggplot(data=peak2014spring, aes(x=press)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Pressure") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windBEARING
+windBearing.hist4 <- ggplot(data=peak2014spring, aes(x=windBearing)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Wind Bearing") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#precipPROB
+precipProb.hist4 <- ggplot(data=peak2014spring, aes(x=precipProb)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Precipitation Probability") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#windSpeed
+windSpeed.hist4 <- ggplot(data=peak2014spring, aes(x=windSpeed)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Wind Speed") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#pricipINTENSITY
+pricipIntensity.hist4 <- ggplot(data=peak2014spring, aes(x=pricipIntensity)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Pricipitation Intensity") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+#USE
+use.hist4 <- ggplot(data=peak2014spring, aes(x=use)) + geom_histogram(color="black", fill="blue", bins = 70) + xlab("Spring Use") + theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+multiplot(gen.hist4, hum.hist4, appTEMP.hist4, cc.hist4, dewPOINT.hist4, temp.hist4, vis.hist4, press.hist4, windBearing.hist4, precipProb.hist4, windSpeed.hist4, pricipIntensity.hist4, cols=2)
+```
+
+MODEL
+```{r}
+spring1<-lm(gen~temp+icon+hum+vis+sum+appTemp+press+windSpeed+cc+windBearing+pricipIntensity+dewPoint+precipProb+use, data=peak2014spring)
+summary(spring1) 
+qqnorm(spring1$residuals)
+anova(spring1) #icon, hum, press, windSpeed, cc, windBearing,pricipIntensity, precipProb, use... R^2= .2505
+
+both4 = step(spring1, direction = "both", trace=FALSE ) 
+summary(both4) #temp, iconclear-night,iconpartly-cloudy-night, iconrain, vis, sumDrizzle, sumMostly Cloudy, press, windSpeed, cc, windBearing, dewPoint, precipProb, use... R^2=.2648
+backwards4 = step(spring1, direction = "backward", trace=FALSE ) 
+summary(backwards4) #temp, iconclear-night,iconpartly-cloudy-night, iconrain, vis, sumDrizzle, sumMostly Cloudy, press, windSpeed, cc, windBearing, dewPoint, precipProb, use... R^2=.2648
+forward4 = step(spring1, direction = "forward", trace=FALSE ) 
+summary(forward4) #iconclear-night, iconrain, vis, sumMostly Cloudy, press, cc, windBearing, precipProb, use... R^2=.2614
+
+spring_final<-lm(gen~temp+icon+ vis+sum+ press+windSpeed+ cc+ windBearing+ dewPoint+ precipProb+ use, data=peak2014spring)
+pairs(gen~temp+ vis+ press+windSpeed+ cc+ windBearing+ dewPoint+ precipProb+ use, data=peak2014spring)
+#vif(spring_final) #this code doesn't work again
+alias(spring_final) #sumClear/iconcloudy, sumClear/iconfog, sumOvercast/iconcloudy,sumClear/iconpartly-cloudy-day,sumClear/iconpartly-cloudy-night, sumClear/iconrain, sumPartly Cloudy/iconpartly-cloudy-day, sumPartly Cloudy/iconpartly-cloudy-night, sumRain/iconrain, sumClear/iconwind, sumPartly Cloudy/sumMostly Cloudy, sumRain/sumDrizzle, sumRain/sumLight Rain seem to be highly correlated. 
+qqnorm(spring_final$residuals)
+
+#CHECKING ASSUMPTIONS
+#the residuals vs fitted plot looks really bad...they clearly have some kind of trend
+errors4<-ggplot(fortify(spring_final), aes(x=.fitted, y=.resid))+geom_point() +
+      geom_smooth(se=FALSE)+geom_hline(yintercept=0, col="red", linetype="dashed") +
+      xlab("Fitted Values")+ylab("Residuals") +
+      ggtitle("Residual vs Fitted Plot")
+#check for non-constant variance
+variance4<-ggplot(data=spring_final, aes(x=.resid)) + 
+      geom_histogram(binwidth=0.5, fill="blue") +
+      xlab("Residuals") +
+      ggtitle("Distribution of Residuals")
+```
+
+
+################## COMPARING PLOTS ##################
+
+
+#### DESCRIPTIVES
+
+Generation
+```{r}
+multiplot(gen.hist, gen.hist2, gen.hist3, gen.hist4, cols=2)
+```
+
+Humidity
+```{r}
+multiplot(hum.hist, hum.hist2, hum.hist3, hum.hist4, cols=2)
+```
+
+appTEMP
+```{r}
+multiplot(appTEMP.hist, appTEMP.hist2, appTEMP.hist3, appTEMP.hist4, cols=2)
+```
+
+DewPoint
+```{r}
+multiplot(dewPOINT.hist, dewPOINT.hist2, dewPOINT.hist3, dewPOINT.hist4, cols=2)
+```
+
+TEMP
+```{r}
+multiplot(temp.hist, temp.hist2, temp.hist3, temp.hist4, cols=2)
+```
+
+Visibility
+```{r}
+multiplot(vis.hist,vis.hist2, vis.hist3, vis.hist4, cols=2)
+```
+
+Pressure
+```{r}
+multiplot(press.hist,press.hist2,press.hist3,press.hist4, cols=2)
+```
+
+Wind Bearing
+```{r}
+multiplot(windBearing.hist, windBearing.hist2, windBearing.hist3, windBearing.hist4, cols=2)
+```
+
+Precipitation Probability
+```{r}
+multiplot(precipProb.hist, precipProb.hist2, precipProb.hist3, precipProb.hist4, cols=2)
+```
+
+Wind Speed
+```{r}
+multiplot(windSpeed.hist, windSpeed.hist2, windSpeed.hist3, windSpeed.hist4, cols=2)
+```
+
+Precipitation Intensity
+```{r}
+multiplot(pricipIntensity.hist, precipProb.hist2, precipProb.hist3, precipProb.hist4, cols=2)
+```
+
+Use
+```{r}
+multiplot(use.hist, use.hist2, use.hist3, use.hist4, cols=2)
+```
+
+##### MODELS
+
+```{r}
+#want to take out use because it doesn't make sense. Also will probably take out sum or icon
+#winter model has highest adj R^2
+summary(w_final) #used anova, uses temp + icon + hum + vis + press + windBearing + use
+summary(f_final) #used forward, uses temp + sum + cc + windBearing + dewPoint + precipProb + use
+summary(summer_final) #used both/backwards, uses icon + hum + sum + appTemp + cc + windBearing +  pricipIntensity + dewPoint + precipProb + use
+summary(spring_final) #used both/backwards, uses temp + icon + vis + sum + press + windSpeed + cc + windBearing + dewPoint + precipProb + use
+
+#Normality of QQ Plot-they all look fine
+qqnorm(w_final$residuals)
+qqnorm(f_final$residuals)
+qqnorm(summer_final$residuals)
+qqnorm(spring_final$residuals)
+
+#Correlation of errors
+multiplot(errors1,errors2,errors3,errors4, cols=2) #winter,summer,fall,spring read across
+
+#Constant Variance
+multiplot(variance1,variance2,variance3,variance4, cols=2) #seems that all the season are distributed normally except winter
+```
+
+########## General Comments #############
+
+-Seems that backwards and both selection produce the same adj R^2 for every season.
+
+- in the winter, the specific variables are from the anova rather than the other 3 variable selection methods
+-had to run an extra "alias" command for summer and spring. Maybe this is because there should be an interaction term? Seems that the variable sum and icon might say similar things. Tried taking out one of the variables and it didn't help. Also, tried the interaction term but didn't help. Have to look more into this.
+
+-The winter model does not include sum but does include icon whereas every other season has both sum and icon
+
+-summer model is only one that doesn't keep temperature in the model
+
+################
+THIS WAS MY HOUR LONG TANGENT TRYING TO GET THE ERRORS TO NOT BE CORRELATED...
+
+INCLUDING TIME AND DATE (QUESTION: DID WE AVERAGE THE DATA FOR EACH HOUR??)
+
+```{r}
+peak2014t<- dplyr::select(homeC2014DAY,
+                  temp:gen,
+                  season,
+                  time,
+                  date
+)
+peak2014winter_t<-filter(peak2014t,season=="winter")
+#looked at full model
+w4<-lm(gen~temp+icon+hum+vis+sum+appTemp+press+windSpeed+cc+windBearing+pricipIntensity+dewPoint+precipProb+use+date+time, data=peak2014winter_t)
+summary(w4) #R^2 is slightly better
+anova(w4) #keeps temp, icon, hum, vis, press, windBearing, use, date, time
+both = step(w4, direction = "both", trace=FALSE ) 
+summary(both) #has an error 
+
+#keeps temp, vis, press, cc, windBearing, dewPoint, use
+backwards = step(w1, direction = "backward", trace=FALSE ) 
+summary(backwards)
+forward = step(w1, direction = "forward", trace=FALSE ) 
+summary(forward) 
+#check for non-linearity of data
+res_plot<-ggplot(w2_2, aes(x=.fitted, y=.resid))+geom_point() +
+      geom_smooth(se=FALSE)+geom_hline(yintercept=0, col="red", linetype="dashed") +
+      xlab("Fitted Values")+ylab("Residuals") +
+      ggtitle("Residual vs Fitted Plot")
+#correlation of error terms
+error_correlation<-ggplot(w4, aes(x=time, y=.resid))+geom_point() +
+      geom_smooth(se=FALSE)+geom_hline(yintercept=0, col="red", linetype="dashed") +
+      xlab("Time")+ylab("Residuals") +
+      ggtitle("Residual vs Time Plot")
+```
+
+
+WITH TRANSFORMS
+
+```{r}
+#this code doesn't work but idk why
+w3<-lm(log(gen)~temp+icon+hum+vis+sum+appTemp+press+windSpeed+cc+windBearing+pricipIntensity+dewPoint+precipProb+use, data=peak2014winter)
+```
